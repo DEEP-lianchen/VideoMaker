@@ -1,0 +1,14 @@
+release_results/
+civitai_models/
+gradio_cached_examples/
+outputs/
+__pycache__/
+.idea/
+*.bin
+*.safetensors
+datasets/*
+examples/*
+checkpoints*
+*.zip
+eval/RAFT/models/*
+output/*
