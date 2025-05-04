@@ -20,7 +20,9 @@ def prepare_image(image):
         image = image.to(dtype=torch.float32)
     else:
         # preprocess image
+        print(f"image type: {type(image)}")
         if isinstance(image, (PIL.Image.Image, np.ndarray)):
+            print("yes")
             image = [image]
         if isinstance(image, list) and isinstance(image[0], PIL.Image.Image):
             image = [np.array(i.convert("RGB"))[None, :] for i in image]
@@ -29,4 +31,5 @@ def prepare_image(image):
             image = np.concatenate([i[None, :] for i in image], axis=0)
         image = image.transpose(0, 3, 1, 2)
         image = torch.from_numpy(image).to(dtype=torch.float32) / 127.5 - 1.0
+    
     return image

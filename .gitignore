@@ -12,3 +12,9 @@ checkpoints*
 *.zip
 eval/RAFT/models/*
 output/*
+logs/
+*.json
+*.sh
+pretrain_model/
+sample_outputs/
+videomaker_output/

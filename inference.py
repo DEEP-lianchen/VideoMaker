@@ -15,6 +15,7 @@ import cv2
 # gloal variable and function
 import argparse
 
+
 def isimage(path):
     if 'png' in path.lower() or 'jpg' in path.lower() or 'jpeg' in path.lower():
         return True
@@ -78,6 +79,8 @@ for image_path in image_path_list:
     print(image_path)
     input_id_images.append(load_image(image_path).resize((512,512)))
 
+    # print(f"type: {type(input_id_images[-1])}")
+
 for image_path,input_id_image in zip(image_path_list, input_id_images):
     dir_name = os.path.basename(image_path).split('.')[0]
     if args.prompt.endswith('.txt'):
@@ -87,10 +90,21 @@ for image_path,input_id_image in zip(image_path_list, input_id_images):
     negative_prompt = "semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, text, close up, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck"
     seed_list = args.seed
 
+    print(f"input_id_image shape: {input_id_image.size}")
+    print(f"input_id_image type: {type(input_id_image)}")
     input_id_image_emb = pipe.prepare_reference_image_embeds(input_id_image, None, torch.device("cuda"), 1)
+    # exit()
+    # torch.save(input_id_image_emb, "/data3/liuyanchen/VideoBooth/input_id_image_emb.pt")
+    # print(f"successfully save ref_image_emb to ref_image_emb.pt")
     
+    # print("input_id_image_emb shape: ", input_id_image_emb.shape)
+    # exit()
     size = (args.size, args.size)
     cnt=-1
+
+    timestamp = pd.Timestamp.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # Create a directory with the timestamp
+    output_dir = os.path.join(args.output, args.name, timestamp)
 
     for prompt in prompts:
         cnt+=1
@@ -106,5 +120,5 @@ for image_path,input_id_image in zip(image_path_list, input_id_images):
                 generator=generator,
                 num_inference_steps=args.num_steps,
             ).frames[0]
-            os.makedirs("{}/{}".format(args.output,dir_name), exist_ok=True)
-            export_to_gif(frames, "{}/{}/{}_{}_seed_{}.gif".format(args.output, dir_name, cnt, prompt.replace(' ','_'),seed))
+            os.makedirs("{}/{}/{}".format(args.output, dir_name, timestamp), exist_ok=True)
+            export_to_gif(frames, "{}/{}/{}/{}_{}_seed_{}.gif".format(args.output, dir_name, timestamp, cnt, prompt.replace(' ','_'),seed))

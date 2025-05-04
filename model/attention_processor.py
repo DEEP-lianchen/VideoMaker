@@ -57,6 +57,12 @@ class PersonalizedInjectionAttnProcessor2_0:
         self.cross_attention_dim = cross_attention_dim
         self.num_frames = num_frames
 
+        # print(f"-------------------------------------------------------------")
+        # print(f"Using PersonalizedInjectionAttnProcessor2_0 with num_frames={num_frames}")
+        # print(f"Using PersonalizedInjectionAttnProcessor2_0 with hidden_size={hidden_size}")
+        # print(f"Using PersonalizedInjectionAttnProcessor2_0 with cross_attention_dim={cross_attention_dim}")
+        # print(f"-------------------------------------------------------------")
+
     def __call__(
         self,
         attn: Attention,
@@ -69,14 +75,20 @@ class PersonalizedInjectionAttnProcessor2_0:
     ) -> torch.Tensor:
         num_frames=self.num_frames
         residual = hidden_states # [b*f,h*w,c]
+        # print(f"residual shape: {residual.shape}")
         hidden_states = rearrange(hidden_states, '(b f) t c -> b f t c',f=num_frames+1)
 
         hidden_states, n_visual = process_latent_tensor(hidden_states) # [b*(f-1),h*w*2,c]
 
+        # print(f"attn.spatial_norm: {attn.spatial_norm}")
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
 
+        # print(f"hidden_states shape: {hidden_states.shape}")
+
         input_ndim = hidden_states.ndim
+
+        # print(f"input_ndim: {input_ndim}")
 
         if input_ndim == 4:
             batch_size, channel, height, width = hidden_states.shape
@@ -86,17 +98,21 @@ class PersonalizedInjectionAttnProcessor2_0:
             hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
         )
 
+        # print(f"attention_mask shape: {attention_mask.shape if attention_mask is not None else None}")
+
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
             # scaled_dot_product_attention expects attention_mask shape to be
             # (batch, heads, source_length, target_length)
             attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
 
+        # print(f"attn.group_norm: {attn.group_norm if attn.group_norm is not None else None}")
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
 
         query = attn.to_q(hidden_states)
 
+        # print(f"encoder_hidden_states shape: {encoder_hidden_states.shape if encoder_hidden_states is not None else None}")
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
         elif attn.norm_cross:
@@ -107,6 +123,13 @@ class PersonalizedInjectionAttnProcessor2_0:
 
         inner_dim = key.shape[-1]
         head_dim = inner_dim // attn.heads
+
+        # print(f"query shape: {query.shape}")
+        # print(f"key shape: {key.shape}")
+        # print(f"value shape: {value.shape}")
+        # print(f"key.shape[-1]: {key.shape[-1]}")
+        # print(f"attn.heads: {attn.heads}")
+        # print(f"head_dim: {head_dim}")
 
         query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2).contiguous()
 

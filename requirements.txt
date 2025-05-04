@@ -12,10 +12,10 @@ opencv_python_headless==4.10.0.84
 pandas==2.2.3
 Pillow==10.3.0
 safetensors==0.4.3
-torch==2.3.0
-torchvision==0.18.0
+# torch==2.3.0
+# torchvision==0.18.0
 tqdm==4.66.5
 transformers==4.46.3
-xformers==0.0.26.post1
+# xformers==0.0.26.post1
 gradio==5.9.1
 moviepy==2.1.1

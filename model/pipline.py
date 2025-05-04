@@ -47,12 +47,15 @@ if is_transformers_available():
 
 class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
     def set_fusion_model(self,unet_path=None):
+        # print(f"self.unet.config.block_out_channels: {self.unet.config.block_out_channels}")
         cross_attn_dim = self.unet.config.cross_attention_dim
         attn_procs = {}
         for name in self.unet.attn_processors.keys():
+            # print(f"attn procs name: {name}")
             cross_attention_dim = None if name.endswith("attn1.processor") else cross_attn_dim
             if name.startswith("mid_block"):
                 hidden_size = self.unet.config.block_out_channels[-1]
+                # print(f"hidden size: {hidden_size}")
             elif name.startswith("up_blocks"):
                 block_id = int(name[len("up_blocks.")])
                 hidden_size = list(reversed(self.unet.config.block_out_channels))[block_id]
@@ -72,10 +75,30 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
             else:
                 attn_procs[name] = self.unet.attn_processors[name]                                      
         self.unet.set_attn_processor(attn_procs)
-        model = torch.load(unet_path,map_location='cpu')
+        from safetensors.torch import load_file
+        if isinstance(unet_path, str):
+            if unet_path.endswith('.safetensors'):
+                model = load_file(unet_path)
+            else:
+                model = torch.load(unet_path,map_location='cpu')
+            # 如果是 state_dict（大多数情况），直接取 keys
+            if isinstance(model, dict) and 'state_dict' in model:
+                state_dict = model['state_dict']
+            else:
+                state_dict = model
+        else:
+            state_dict = unet_path.state_dict()
+
         result = self.unet.load_state_dict(model, strict=False)
+
+        # # 筛选出符合条件的参数
+        # filtered_state_dict = {name: param for name, param in state_dict.items() if 'attentions' in name and 'transformer_blocks' in name and 'attn1' in name}
+
+        # # 只加载符合条件的参数
+        # result = self.unet.load_state_dict(filtered_state_dict, strict=False)
         del model
         return
+    
     def compute_vae_encodings(self,image: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -99,7 +122,9 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
             ref_latents = reference_image_embeds
         else:
             reference_image = prepare_image(reference_image)
+            # print(f"reference_image.shape: {reference_image.shape}")
             ref_latents = self.compute_vae_encodings(reference_image)
+            # print(f"ref_latents.shape: {ref_latents.shape}")
             ref_latents = ref_latents.unsqueeze(2)
             ref_latents = torch.cat([ref_latents]*num_images_per_prompt)
         return ref_latents.to(device)
@@ -253,6 +278,9 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
         text_encoder_lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
+
+        # print(f"text_encoder_lora_scale: {text_encoder_lora_scale}")
+
         prompt_embeds, negative_prompt_embeds = self.encode_prompt(
             prompt,
             device,
@@ -264,11 +292,18 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
             lora_scale=text_encoder_lora_scale,
             clip_skip=self.clip_skip,
         )
+        print(f"prompt: {prompt}")
+        print(f"prompt_embeds.shape: {prompt_embeds.shape}")
         # For classifier free guidance, we need to do two forward passes.
         # Here we concatenate the unconditional and text embeddings into a single batch
         # to avoid doing two forward passes
+        # print(f"do_classifier_free_guidance: {self.do_classifier_free_guidance}")
         if self.do_classifier_free_guidance:
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
+
+        # print(f"----------------------------------------------")
+        # print(f"ip_adapter_image: {ip_adapter_image}")
+        # print(f"ip_adapter_image_embeds: {ip_adapter_image_embeds}")
 
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
             image_embeds = self.prepare_ip_adapter_image_embeds(
@@ -278,6 +313,10 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
                 batch_size * num_videos_per_prompt,
                 self.do_classifier_free_guidance,
             )
+
+        # print(f"----------------------------------------------")
+        # print(f"reference_image: {reference_image}")
+        # print(f"reference_image_embeds.shape: {reference_image_embeds.shape if reference_image_embeds is not None else None}")
         if reference_image is not None or reference_image_embeds is not None:
             ref_latents = self.prepare_reference_image_embeds(
                 reference_image,
@@ -293,6 +332,7 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
 
         # 5. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
+        # print(f"num_channels_latents: {num_channels_latents}")
         latents = self.prepare_latents(
             batch_size * num_videos_per_prompt,
             num_channels_latents,
@@ -304,6 +344,7 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
             generator,
             latents,
         )
+        print(f"latents.shape: {latents.shape}")
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -316,6 +357,10 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
         )
 
         num_free_init_iters = self._free_init_num_iters if self.free_init_enabled else 1
+
+        # print(f"num_free_init_iters: {num_free_init_iters}")
+        # print(f"self.free_init_enabled: {self.free_init_enabled}")
+
         for free_init_iter in range(num_free_init_iters):
             if self.free_init_enabled:
                 latents, timesteps = self._apply_free_init(
@@ -325,18 +370,27 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
             self._num_timesteps = len(timesteps)
             num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
 
+            # print(f"num_warmup_steps: {num_warmup_steps}")
+            # print(f"self._num_timesteps: {self._num_timesteps}")
+            # print(f"num_inference_steps: {num_inference_steps}")
+            # print(f"timesteps: {timesteps}")
+
             # 8. Denoising loop
             with self.progress_bar(total=self._num_timesteps) as progress_bar:
                 for i, t in enumerate(timesteps):
                     # expand the latents if we are doing classifier free guidance
                     latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
                     latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                    # print(f"reference_image_noisy: {reference_image_noisy}")
                     if reference_image_noisy:
                         noise_ref = torch.mean(latent_model_input, dim=2, keepdim=True)
                         ref_timesteps = torch.tensor(int(t * ref_noisy_ratio),dtype=torch.int)
                         ref_latents = self.scheduler.add_noise(ref_latents, noise_ref, ref_timesteps)
                     latent_model_input = torch.cat([latent_model_input, ref_latents], dim=2)
+                    print(f"latent_model_input.shape: {latent_model_input.shape}")
+                    # exit()
                     # predict the noise residual
+                    # print(f"cross_attention_kwargs: {cross_attention_kwargs}")
                     noise_pred = self.unet(
                         latent_model_input,
                         t,
@@ -383,4 +437,3 @@ class VideoMakerAnimateDiffPipeline(AnimateDiffPipeline):
             return (video,)
 
         return AnimateDiffPipelineOutput(frames=video)
-
